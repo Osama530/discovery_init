@@ -1,0 +1,24 @@
+# .cargo/config
+
+# for connecting with openocd.gdb
+[target.thumbv7em-none-eabihf]
+runner = "gdb-multiarch -q -x openocd.gdb"
+
+[build]
+# always compile for instruction set of
+
+# for the Cortex-M0 and Cortex-M1 processors
+# target = "thumbv6m-none-eabi"
+
+# for the Cortex-M3 processor
+# target = "thumbv7m-none-eabi"
+
+# for the Cortex-M4 and Cortex-M7 processors
+# target = "thumbv7em-none-eabi"
+
+# for the Cortex-M4F and Cortex-M7F processors
+target = "thumbv7em-none-eabihf"
+
+rustflags = [
+    "-C", "link-arg=-Tlink.x",
+]
