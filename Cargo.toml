@@ -9,8 +9,10 @@ edition = "2018"
 [dependencies]
 cortex-m = "0.7.2"      # Access to the generic arm peripherals
 cortex-m-rt = "0.6.15"   # Startup code for ARM core
-embedded-hal = "0.2.6"  # Access to the generic embedded functions
+# embedded-hal = "0.2.6"  # Access to the generic embedded functions
 panic-halt = "0.2.0"    # panic handler
 cortex-m-semihosting = "0.3.7"
-
-stm32f3xx-hal = { version = "0.8.0", features = ["ld", "rt", "stm32f303xc"] }
+# stm32f3xx-hal = { version = "0.8.0", features = ["ld", "rt", "stm32f303xc"] }
+[dependencies.stm32f3]
+version = "0.13.2"
+features = ["stm32f303", "rt"]

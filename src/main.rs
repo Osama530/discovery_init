@@ -6,42 +6,57 @@ extern crate cortex_m_semihosting;
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use panic_halt as _;
-use stm32f3xx_hal::{pac, prelude::*};
+//use stm32f3xx_hal::{pac, prelude::*}; without using hall
+use stm32f3::stm32f303;
 use cortex_m_semihosting::hprintln;
 
 #[entry]
 fn main() -> ! {
-      let peripherals = pac::Peripherals::take().unwrap(); //initializing all the peripherals (external circuitry)
+      let mut peripherals = stm32f303::Peripherals::take().unwrap();
+      let mut rcc = peripherals.RCC;
 
-      let mut rcc = peripherals.RCC.constrain();
+      let gpioa = &peripherals.GPIOA;
+      let gpioe = &peripherals.GPIOE;
 
-      let mut gpioe = peripherals.GPIOE.split(&mut rcc.ahb);
-      let mut gpioa = peripherals.GPIOA.split(&mut rcc.ahb);
+// enabling the gpioe and gpioa registers
+      rcc.ahbenr.write(|w| w
+            .iopaen().set_bit()
+            .iopeen().set_bit()
+      );
 
-      let mut led_1 = gpioe
-            .pe13
-            .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
+// configuring pin input output configuration
+      gpioe.moder.write(|w| w
+            .moder15().bits(01)
+      );
 
-      let mut led_2 = gpioe
-            .pe8
-            .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
+      gpioa.moder.write(|w| w
+            .moder0().bits(00)
+      );
+      
+      gpioa.pupdr.write(|w| unsafe {
+      w
+            .pupdr0().bits(00)
+      });
 
-      let push_button = gpioa
-            .pa0
-            .into_pull_down_input(&mut gpioa.moder, &mut gpioa.pupdr);
-         
-      loop {
-            hprintln!("helo world").unwrap();
-            //if push_button {
-                  led_1.toggle().unwrap();
-            //}
-            asm::delay(8_000_000);
-            //else {
 
-                  led_2.toggle().unwrap();
+let mut count = 0;
 
-            panic!("paniced"); //halt the program at panic!
-            //}
+loop {
+
+      let button_state = gpioa.idr.read().idr0();
+
+      if button_state == true {
+      count += 1;
+      gpioe.bsrr.write(|w| w
+            .bs15().set_bit());
+      hprintln!("count = {:?}", count);
+      asm::delay(6_000_000);  }
+     
+      else {
+            gpioe.bsrr.write(|w| w
+                  .br15().set_bit());
             //asm::delay(6_000_000);
       }
+
+   }
 }
