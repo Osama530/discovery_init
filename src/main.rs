@@ -26,7 +26,15 @@ fn main() -> ! {
 
 // configuring pin input output configuration
       gpioe.moder.write(|w| w
+            .moder8().bits(01)
+            .moder9().bits(01)
+            .moder10().bits(01)
+            .moder11().bits(01)
+            .moder12().bits(01)
+            .moder13().bits(01)
+            .moder14().bits(01)
             .moder15().bits(01)
+
       );
 
       gpioa.moder.write(|w| w
@@ -39,24 +47,53 @@ fn main() -> ! {
       });
 
 
-let mut count = 0;
+let mut count = 7;
 
 loop {
-
+      
       let button_state = gpioa.idr.read().idr0();
-
       if button_state == true {
-      count += 1;
-      gpioe.bsrr.write(|w| w
-            .bs15().set_bit());
-      hprintln!("count = {:?}", count);
-      asm::delay(6_000_000);  }
-     
-      else {
-            gpioe.bsrr.write(|w| w
-                  .br15().set_bit());
-            //asm::delay(6_000_000);
-      }
+      count += 1; }
 
-   }
+      match count {
+            8 => { gpioe.bsrr.write(|w| w.bs8().set_bit());
+                  asm::delay(4_000_000); },
+            9 =>{ gpioe.bsrr.write(|w| w.bs9().set_bit());
+            asm::delay(4_000_000); },
+
+            10 =>{ gpioe.bsrr.write(|w| w.bs10().set_bit());
+            asm::delay(4_000_000); },
+
+            11 =>{ gpioe.bsrr.write(|w| w.bs11().set_bit());
+            asm::delay(4_000_000); },
+
+            12 =>{ gpioe.bsrr.write(|w| w.bs12().set_bit());
+            asm::delay(4_000_000); },
+
+            13 =>{ gpioe.bsrr.write(|w| w.bs13().set_bit());
+            asm::delay(4_000_000); },
+
+            14 =>{ gpioe.bsrr.write(|w| w.bs14().set_bit());
+            asm::delay(4_000_000); },
+
+            15 =>{ gpioe.bsrr.write(|w| w.bs15().set_bit());
+            asm::delay(4_000_000); },
+
+            _ => { if count >= 15 {
+                  count = 7;
+                  gpioe.bsrr.write(|w| w
+                        .br8().set_bit()
+                        .br9().set_bit()
+                        .br10().set_bit()
+                        .br11().set_bit()
+                        .br12().set_bit()
+                        .br13().set_bit()
+                        .br14().set_bit()
+                        .br15().set_bit())
+                  
+            }
+       }
+            
+            }
+      }
 }
