@@ -25,7 +25,7 @@ fn main() -> ! {
       let mut tx = gpioa.pa9.into_af7_push_pull(&mut gpioa.moder, &mut gpioa.otyper, &mut gpioa.afrh);  
       let mut rx=  gpioa.pa10.into_af7_push_pull(&mut gpioa.moder, &mut gpioa.otyper, &mut gpioa.afrh);
       
-      // seting baud rate for usart1
+      // setting baud rate and clock source for usart1
       let mut serial = Serial::new(
             usart1,
             (tx,rx),
@@ -37,11 +37,28 @@ fn main() -> ! {
       
       
       loop {
+            // while !usart1.isr.read().rxne().bit_is_set()
+            if serial.is_event_triggered(Event::ReceiveDataRegisterNotEmpty) {
+                  let data = serial.read().unwrap();
+                  serial.write(u8::from(b'z')).unwrap();
+                  hprintln!("data = {}",data);
+                  
+            }; 
+            
             for byte in b"hay whats up dude".iter() {
                   // wait until it's safe to write to TDR
                   serial.write(u8::from(*byte)).unwrap();
                   while !serial.is_event_triggered(Event::TransmissionComplete) {}
                   // print!("{}", );
             }
+
+
       }
+
 }
+
+// wiring 
+// Arduino     Ftdi     Stm32
+// ACM1        USB0      ACM0
+// TX           RX        RX
+// Rx           TX        TX
