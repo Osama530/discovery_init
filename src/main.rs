@@ -18,7 +18,8 @@ use lazy_static::lazy_static;
 lazy_static!{
       static ref MUTEX_GPIOA: Mutex<RefCell<Option<stm32f303::GPIOA>>> = Mutex::new(RefCell::new(None));
       static ref MUTEX_EXTI: Mutex<RefCell<Option<stm32f303::EXTI>>> = Mutex::new(RefCell::new(None));
-      // static ref COUNTS: Mutex<RefCell<interrupt_count>> = Mutex::new(RefCell::new(None));
+      static ref MUTEX_GPIOE: Mutex<RefCell<Option<stm32f303::GPIOE>>> = Mutex::new(RefCell::new(None));
+     
 }
 static mut counter: u32 = 0;
 
@@ -77,8 +78,9 @@ fn main() -> ! {
 // After this we can only access them via their respective mutex
       cortex_m::interrupt::free(|cs|{
             MUTEX_GPIOA.borrow(cs).replace(Some(peripherals.GPIOA));
+            MUTEX_GPIOE.borrow(cs).replace(Some(peripherals.GPIOE));
             MUTEX_EXTI.borrow(cs).replace(Some(peripherals.EXTI));
-            // COUNTS.borrow(cs).replace(Some(interrupt_count));
+
       });
 
 // Finally you can enable interrupts on the EXTI0 line and enter the main loop:
@@ -91,7 +93,6 @@ fn main() -> ! {
 }
 #[interrupt]
 fn EXTI0() {
-      let mut interrupt_count = 0;
       cortex_m::interrupt::free (|cs| {
             let exti = MUTEX_EXTI.borrow(cs).borrow();
             exti.as_ref().unwrap().pr1.write(|w|
@@ -102,9 +103,24 @@ fn EXTI0() {
             let gpio_a = MUTEX_GPIOA.borrow(cs).borrow();
             gpio_a.as_ref().unwrap().idr.read().idr0().bit_is_set()
       });
+      cortex_m::interrupt::free(|cs|{
+            let ref_cell = MUTEX_GPIOE.borrow(cs).borrow();
+            let gpio_e = match ref_cell.as_ref() {
+                   Some(v) => v,
+                   None=> return     };
+            gpio_e.odr.modify(|r, w| {
+                  let led4 = r.odr8().bit();
+                  if led4 {
+                      w.odr8().clear_bit()
+                  } else {
+                      w.odr8().set_bit()
+                  }
+              }); 
+      });
+
       if button_state {
             unsafe { counter += 1; 
-            hprintln!("intrrupt awakes = {}",counter); };
+            hprintln!("intrrupt awakes = {}",counter); }; 
       }
 }
 
