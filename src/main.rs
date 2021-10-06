@@ -18,7 +18,9 @@ use lazy_static::lazy_static;
 lazy_static!{
       static ref MUTEX_GPIOA: Mutex<RefCell<Option<stm32f303::GPIOA>>> = Mutex::new(RefCell::new(None));
       static ref MUTEX_EXTI: Mutex<RefCell<Option<stm32f303::EXTI>>> = Mutex::new(RefCell::new(None));
+      // static ref COUNTS: Mutex<RefCell<interrupt_count>> = Mutex::new(RefCell::new(None));
 }
+static mut counter: u32 = 0;
 
 #[entry]
 fn main() -> ! {
@@ -69,11 +71,14 @@ fn main() -> ! {
       w
             .tr0().set_bit() //rising triger adge selection for exti 0
       );
+
+      // let mut interrupt_count;
 // move the GPIOA and EXTI peripherals into the Mutex:
 // After this we can only access them via their respective mutex
       cortex_m::interrupt::free(|cs|{
             MUTEX_GPIOA.borrow(cs).replace(Some(peripherals.GPIOA));
             MUTEX_EXTI.borrow(cs).replace(Some(peripherals.EXTI));
+            // COUNTS.borrow(cs).replace(Some(interrupt_count));
       });
 
 // Finally you can enable interrupts on the EXTI0 line and enter the main loop:
@@ -81,11 +86,12 @@ fn main() -> ! {
       unsafe{ NVIC::unmask(stm32f303::Interrupt::EXTI0) };
 
       loop{
-
+            
       }
 }
 #[interrupt]
 fn EXTI0() {
+      let mut interrupt_count = 0;
       cortex_m::interrupt::free (|cs| {
             let exti = MUTEX_EXTI.borrow(cs).borrow();
             exti.as_ref().unwrap().pr1.write(|w|
@@ -97,7 +103,8 @@ fn EXTI0() {
             gpio_a.as_ref().unwrap().idr.read().idr0().bit_is_set()
       });
       if button_state {
-            hprintln!("intrrupt awakes");
+            unsafe { counter += 1; 
+            hprintln!("intrrupt awakes = {}",counter); };
       }
 }
 
