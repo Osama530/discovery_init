@@ -10,7 +10,7 @@ use panic_halt as _;
 use stm32f3::{stm32f303, stm32f303::interrupt};
 use cortex_m_semihosting::hprintln;
 
-use cortex_m::{interrupt::Mutex, peripheral::NVIC};
+use cortex_m::{asm,interrupt::Mutex, peripheral::NVIC};
 use core::cell::RefCell;
 use lazy_static::lazy_static;
 
@@ -88,6 +88,23 @@ fn main() -> ! {
       unsafe{ NVIC::unmask(stm32f303::Interrupt::EXTI0) };
 
       loop{
+            // blink led 
+            cortex_m::interrupt::free(|cs| {
+                  let ref_cell = MUTEX_GPIOE.borrow(cs).borrow();
+                  let led_9 = match ref_cell.as_ref() {
+                        Some(value) => value,
+                        None  => return
+                  };
+                  led_9.odr.modify(|r, w| {
+                        let led = r.odr9().bit();
+                        if led {
+                            w.odr9().clear_bit()
+                        } else {
+                            w.odr9().set_bit()
+                        }
+                    });
+                  asm::delay(1_000_000);
+            });
             
       }
 }
