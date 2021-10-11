@@ -14,130 +14,113 @@ use cortex_m::{asm,interrupt::Mutex, peripheral::NVIC};
 use core::cell::RefCell;
 use lazy_static::lazy_static;
 
+// initializing globle variables
+const DMA_LENGHT: usize = 64;
+static mut DMA_BUFFER: [u32; DMA_LENGHT] =[0; DMA_LENGHT];   
+
 // we will need to declare and initialize new global instances for each shared peripheral:
 lazy_static!{
-      static ref MUTEX_GPIOA: Mutex<RefCell<Option<stm32f303::GPIOA>>> = Mutex::new(RefCell::new(None));
-      static ref MUTEX_EXTI: Mutex<RefCell<Option<stm32f303::EXTI>>> = Mutex::new(RefCell::new(None));
-      static ref MUTEX_GPIOE: Mutex<RefCell<Option<stm32f303::GPIOE>>> = Mutex::new(RefCell::new(None));
-     
+     static ref MUTEX_DMA2: Mutex<RefCell<Option<stm32f303::DMA2>>> = Mutex::new(RefCell::new(None));
 }
-static mut counter: u32 = 0;
+
+// initilizing and congigring tim2 timer
+pub fn init_tim2(dp: &stm32f303::Peripherals){
+      let rcc = &dp.RCC;
+      // enabeling tim2 clock
+      rcc.apb1enr.write(|w| w.tim2en().set_bit());
+      // calculation for tim2 frecuency
+      let sys_clock = 8_000_000;    // the stmf32f3 discovery board CPU runs at 8Mhz by default
+      let sampling_frequency = 44_100; // we want an audio sampling rate of 44.1KHz
+      let arr = sys_clock/sampling_frequency;
+      let tim2 = &dp.TIM2;
+      tim2.cr2.write(|w| w.mms().update());     // update when counter reaches arr value
+      tim2.arr.write(|w| w.arr().bits(arr));    //set timer period (sysclk / fs)
+      // finally enabling the timer
+      tim2.cr1.write(|w| w.cen().set_bit());
+}
+// initilizing and congigring GPIO and DAC
+pub fn init_gpio(dp: &stm32f303::Peripherals){
+      let rcc = &dp.RCC;
+      // enebling clocks for gpioa and dac
+      rcc.ahbenr.write(|w| w.iopaen().enabled());
+      rcc.apb1enr.write(|w| 
+      w
+            .dac1en().set_bit()
+            // .dac2en().set_bit()
+      );
+      // configuring gpioa as analog floating
+      let gpio_a = &dp.GPIOA;
+      gpio_a.moder.modify(|_, w|
+      w
+            .moder4().analog()
+            .moder5().analog());
+      gpio_a.pupdr.modify(|_, w|
+      w
+            .pupdr4().floating()
+            .pupdr5().floating());
+      // now configuring dac
+      let dac = &dp.DAC1;
+      dac.cr.write(|w|
+      w
+            .boff1().disabled()     // disable dac output buffer for channel 1
+            .boff2().disabled()     // disable dac output buffer for channel 2
+            .ten1().enabled()       // enable trigger for channel 1
+            .ten2().enabled()       // enable trigger for channel 2
+            .tsel1().tim2_trgo()    // set trigger for channel 1 to TIM2
+            .tsel2().bits(100)      // set trigger for channel 2 to TIM2
+      );
+      // finally enabling the dac
+      dac.cr.modify(|_,w|
+      w
+            .en1().set_bit()
+            .en2().set_bit());
+}
+
+pub fn init_dma(cp:&cortex_m::Peripherals, dp: &stm32f303::Peripherals){
+      // enableing dma clock
+      let rcc = &dp.RCC;
+      rcc.ahbenr.modify(|_, w| w.dma1en().enabled());
+      // the memory address of the data (source) to be transferred
+      let ma = unsafe{
+            DMA_BUFFER.as_ptr()
+      } as usize as u32;
+      // destination memory address
+      let pa = 0x40007420;    // destination: Dual DAC 12-bit right-aligned data holding register (DHR12RD)
+      let ndt = DMA_LENGHT as u16;  // number of items to transfer
+      // configure and enable DMA2 channel 3
+      let dma2 = &dp.DMA2;
+      dma2.ch3.mar.write(|w| unsafe{ w.ma().bits(ma) });    // source memory address
+      dma2.ch3.par.write(|w| unsafe{ w.pa().bits(pa) });// destination peripheral address
+      dma2.ch3.ndtr.write(|w| unsafe{ w.ndt().bits(ndt) });
+
+      // chennel configutration settings
+      dma2.ch3.cr.write(|w| {
+            w.dir().from_memory()   // source is memory
+             .mem2mem().disabled()  // disable memory to memory transfer
+             .minc().enabled()      // increment memory address every transfer
+             .pinc().disabled()     // don't increment peripheral address every transfer
+             .msize().bits32()       // memory word size is 32 bits
+             .psize().bits32()       // peripheral word size is 32 bits
+             .circ().enabled()      // dma mode is circular
+             .pl().high()           // set dma priority to high
+             .teie().enabled()      // trigger an interrupt if an error occurs
+             .tcie().enabled()      // trigger an interrupt when transfer is complete
+             .htie().enabled()      // trigger an interrupt when half the transfer is complete
+        });
+
+      // enable DMA interrupt
+      let nvic = &mut cp.NVIC;
+      nvic.enable(stm32f303::Interrupt::DMA2_CH3);
+}
+
 
 #[entry]
 fn main() -> ! {
-      let peripherals = stm32f303::Peripherals::take().unwrap();
-      let rcc = &peripherals.RCC;
-      let sys_cfg = &peripherals.SYSCFG;
-      let exti = &peripherals.EXTI;
-      let gpioa = &peripherals.GPIOA;
-      let gpioe = &peripherals.GPIOE;
 
-// enabling the gpioe and gpioa and SYS_CFG registers
-      rcc.ahbenr.write(|w| w
-            .iopaen().set_bit()
-            .iopeen().set_bit()
-      );
-
-      rcc.apb2enr.write(|w| w
-            .syscfgen().set_bit()
-      );
-
-
-// configuring pin input output configuration
-      gpioe.moder.write(|w| w
-            .moder8().bits(01)
-            .moder9().bits(01)
-      );
-
-      gpioa.moder.write(|w| w
-            .moder0().bits(00)
-      );
-      
-      gpioa.pupdr.write(|w| unsafe {
-      w
-            .pupdr0().bits(10)
-      });
-// We want to generate an interrupt on the EXTI0 line in response to pin PA0 (connecting PA0-->exti0)
-      sys_cfg.exticr1.write(|w| unsafe{
-      w
-            .exti0().bits(0b000)
-      });
-// Configuring the exti line
-      exti.imr1.write(|w|
-      w
-            .mr0().set_bit() //unmasking interrupt line 0
-      );
-
-      exti.rtsr1.write(|w|
-      w
-            .tr0().set_bit() //rising triger adge selection for exti 0
-      );
-
-      // let mut interrupt_count;
-// move the GPIOA and EXTI peripherals into the Mutex:
-// After this we can only access them via their respective mutex
-      cortex_m::interrupt::free(|cs|{
-            MUTEX_GPIOA.borrow(cs).replace(Some(peripherals.GPIOA));
-            MUTEX_GPIOE.borrow(cs).replace(Some(peripherals.GPIOE));
-            MUTEX_EXTI.borrow(cs).replace(Some(peripherals.EXTI));
-
-      });
-
-// Finally you can enable interrupts on the EXTI0 line and enter the main loop:
-      // nvic.enable(stm32f303::Interrupt::EXTI0); //depricated call
-      unsafe{ NVIC::unmask(stm32f303::Interrupt::EXTI0) };
 
       loop{
-            // blink led 
-            cortex_m::interrupt::free(|cs| {
-                  let ref_cell = MUTEX_GPIOE.borrow(cs).borrow();
-                  let led_9 = match ref_cell.as_ref() {
-                        Some(value) => value,
-                        None  => return
-                  };
-                  led_9.odr.modify(|r, w| {
-                        let led = r.odr9().bit();
-                        if led {
-                            w.odr9().clear_bit()
-                        } else {
-                            w.odr9().set_bit()
-                        }
-                    });
-                  asm::delay(1_000_000);
-            });
+         
             
-      }
-}
-#[interrupt]
-fn EXTI0() {
-      cortex_m::interrupt::free (|cs| {
-            let exti = MUTEX_EXTI.borrow(cs).borrow();
-            exti.as_ref().unwrap().pr1.write(|w|
-                  w
-                  .pr0().set_bit());
-      });
-      let button_state = cortex_m::interrupt::free(|cs|{
-            let gpio_a = MUTEX_GPIOA.borrow(cs).borrow();
-            gpio_a.as_ref().unwrap().idr.read().idr0().bit_is_set()
-      });
-      cortex_m::interrupt::free(|cs|{
-            let ref_cell = MUTEX_GPIOE.borrow(cs).borrow();
-            let gpio_e = match ref_cell.as_ref() {
-                   Some(v) => v,
-                   None=> return     };
-            gpio_e.odr.modify(|r, w| {
-                  let led4 = r.odr8().bit();
-                  if led4 {
-                      w.odr8().clear_bit()
-                  } else {
-                      w.odr8().set_bit()
-                  }
-              }); 
-      });
-
-      if button_state {
-            unsafe { counter += 1; 
-            hprintln!("intrrupt awakes = {}",counter); }; 
       }
 }
 
